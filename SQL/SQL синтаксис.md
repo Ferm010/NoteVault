@@ -24,3 +24,16 @@ email = 'example@outlook.com', first_name = 'Elon'
 WHERE id = 1
 ```
 
+SQL запрос к базе данных на запрос выбора информации в таблице
+
+```SQL
+SELECT
+```
+
+SQL запрос к базе данных на удаление информации в таблице
+
+```SQL
+DELETE FROM users
+WHERE id = 2 OR id = 3
+```
+
