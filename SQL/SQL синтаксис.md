@@ -9,3 +9,10 @@ CREATE TABLE users (
 );
 ```
 
+SQL запрос к базе данных на добавление информации в таблицу
+
+```SQL
+INSERT INTO users (id, first_name, last_name, email)
+VALUES (1, 'Vlad', 'Zagvo', 'example@gmail.com');
+```
+
