@@ -21,6 +21,6 @@ SQL запрос к базе данных на обновление информ
 ```SQL
 UPDATE users SET
 email = 'example@outlook.com', first_name = 'Elon'
-WHERE
+WHERE id = 1
 ```
 
