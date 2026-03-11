@@ -16,3 +16,11 @@ INSERT INTO users (id, first_name, last_name, email)
 VALUES (1, 'Vlad', 'Zagvo', 'example@gmail.com');
 ```
 
+SQL запрос к базе данных на обновление информации в таблицы
+
+```SQL
+UPDATE users SET
+email = 'example@outlook.com', first_name = 'Elon'
+WHERE
+```
+
