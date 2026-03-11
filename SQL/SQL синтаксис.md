@@ -38,3 +38,8 @@ DELETE FROM users
 WHERE id = 2 OR id = 3
 ```
 
+SQL запросы
+
+```
+
+```
