@@ -57,3 +57,11 @@ SQL запрос на соединение в 1 таблицу
 SELECT price.*, users.first_name FROM price
 JOIN users ON users.id = price.user_id
 ```
+
+SQL запрос на изменение информации в таблицы (добавление колонки)
+
+```SQL
+ALTER TABLE price ADD COLUMN category_id BIGINT;
+-- Добавление отношения между таблицами
+ALTER TABLE price CONSTRAINT category_fk FOREIGN KEY (category_id) REFERENCES categories (id)
+```
