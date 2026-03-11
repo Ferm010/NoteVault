@@ -54,5 +54,6 @@ WHERE id = 2 OR id = 3
 SQL запрос на добавление таблицы и связывание между таблицами 1:1
 
 ```SQL
-
+SELECT * FROM price
+JOIN users ON
 ```
