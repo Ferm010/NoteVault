@@ -38,8 +38,15 @@ DELETE FROM users
 WHERE id = 2 OR id = 3
 ```
 
-SQL запросы
+SQL запрос на добавление таблицы и связывание между таблицами 1:1
 
-```
-
+```SQL
+CREATE TABLE price(
+	id BIGINT NOT NULL PRIMARY KEY,
+	price INT NOT NULL,
+	created_at TIMESTAMP DEFAULT now(),
+	user_id BIGINT NOT NULL,
+	-- Добавление отношения между таблицами
+	CONSTRAINT user_id_fk FOREIGN KEY (user_id) REFERENCES users (id)
+)
 ```
