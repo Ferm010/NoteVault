@@ -1,5 +1,5 @@
 
-Подсчет суммы для 1 id
+Подсчет суммы для уникальный ID
 
 ```SQL
 SELECT SUM(price) FROM price_table
