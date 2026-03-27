@@ -4,3 +4,10 @@
 2. **Вставьте хеш** в SecurityCheck.kt → EXPECTED_SIGNATURE
 3. **Создайте keystore** для подписи release версии
 4. **Не коммитьте** keystore и local.properties в git
+
+### Создать баг трекер
+
+1. Добавить проверку валидации почты адекватной
+2. **Вставьте хеш** в SecurityCheck.kt → EXPECTED_SIGNATURE
+3. **Создайте keystore** для подписи release версии
+4. **Не коммитьте** keystore и local.properties в git
