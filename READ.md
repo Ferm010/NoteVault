@@ -636,3 +636,629 @@ namespace project
 }
 
 ```
+
+ordersmenu.xaml
+
+
+```cs
+<Window x:Class="project.OrdersMenu"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Заказы" Height="700" Width="1100"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Background="#F5F5F5" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+            <DockPanel LastChildFill="False">
+                <TextBlock Text="Список заказов" FontSize="18" FontWeight="Bold" DockPanel.Dock="Left"/>
+                <Button x:Name="BtnBack" Content="Назад" Width="90" Height="32" DockPanel.Dock="Right"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Orders DataGrid -->
+        <DataGrid x:Name="OrdersGrid" Grid.Row="1" AutoGenerateColumns="False" 
+                  CanUserAddRows="False" IsReadOnly="True" SelectionMode="Single"
+                  SelectionChanged="OrdersGrid_SelectionChanged"
+                  BorderThickness="1" Background="White" Margin="0,0,0,10">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="60"/>
+                <DataGridTextColumn Header="Код заказа" Binding="{Binding Code}" Width="90"/>
+                <DataGridTextColumn Header="Дата заказа" Binding="{Binding OrderDate}" Width="120"/>
+                <DataGridTextColumn Header="Дата доставки" Binding="{Binding DeliveryDate}" Width="120"/>
+                <DataGridTextColumn Header="Пункт выдачи" Binding="{Binding PickupPoint}" Width="200"/>
+                <DataGridTextColumn Header="Пользователь" Binding="{Binding CreatedBy}" Width="130"/>
+                <DataGridTextColumn Header="Статус" Binding="{Binding Status}" Width="120"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <!-- Order Items Detail -->
+        <Border Grid.Row="2" BorderBrush="#DDDDDD" BorderThickness="1" CornerRadius="6" Padding="10">
+            <StackPanel>
+                <TextBlock Text="Состав заказа:" FontWeight="Bold" Margin="0,0,0,5"/>
+                <DataGrid x:Name="OrderItemsGrid" AutoGenerateColumns="False" 
+                          CanUserAddRows="False" IsReadOnly="True" SelectionMode="Single"
+                          Height="150" Background="White">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Артикул" Binding="{Binding Article}" Width="120"/>
+                        <DataGridTextColumn Header="Наименование" Binding="{Binding Name}" Width="250"/>
+                        <DataGridTextColumn Header="Количество" Binding="{Binding Quantity}" Width="100"/>
+                        <DataGridTextColumn Header="Цена" Binding="{Binding PriceFormatted}" Width="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
+```
+
+
+```cs
+using System;
+using System.Collections.ObjectModel;
+using System.Windows;
+using MySql.Data.MySqlClient;
+
+namespace project
+{
+    public partial class OrdersMenu : Window
+    {
+        private ObservableCollection<OrderItemModel> _orders = new ObservableCollection<OrderItemModel>();
+        private int? _selectedOrderId = null;
+
+        public OrdersMenu()
+        {
+            InitializeComponent();
+            BtnBack.Click += BtnBack_Click;
+            LoadOrders();
+        }
+
+        private void LoadOrders()
+        {
+            _orders.Clear();
+            MySqlConnection conn = Db.GetConnection();
+            conn.Open();
+
+            string sql = @"SELECT o.id_orders, o.kod, o.date_orders, o.date_delivery, 
+                                  p.adress AS point_adress, u.name AS user_name, s.name AS status_name
+                           FROM orders o
+                           INNER JOIN point p ON o.point_id = p.id_point
+                           LEFT JOIN users u ON o.users_id = u.id_user
+                           INNER JOIN status s ON o.status_id = s.id_status
+                           ORDER BY o.id_orders DESC";
+
+            MySqlCommand cmd = new MySqlCommand(sql, conn);
+            MySqlDataReader reader = cmd.ExecuteReader();
+
+            while (reader.Read())
+            {
+                int id = reader.GetInt32("id_orders");
+                string user_name = "Гость";
+                if (!reader.IsDBNull(reader.GetOrdinal("user_name")))
+                    user_name = reader.GetString("user_name");
+
+                _orders.Add(new OrderItemModel
+                {
+                    Id = id,
+                    Code = reader.GetInt32("kod"),
+                    OrderDate = reader.GetString("date_orders"),
+                    DeliveryDate = reader.GetString("date_delivery"),
+                    PickupPoint = reader.GetString("point_adress"),
+                    CreatedBy = user_name,
+                    Status = reader.GetString("status_name")
+                });
+            }
+
+            reader.Close();
+            OrdersGrid.ItemsSource = _orders;
+
+            if (_orders.Count > 0)
+            {
+                _selectedOrderId = _orders[0].Id;
+                LoadOrderItems(_selectedOrderId.Value);
+            }
+        }
+
+        private void LoadOrderItems(int orderId)
+        {
+            ObservableCollection<OrderItemModel> items = new ObservableCollection<OrderItemModel>();
+
+            MySqlConnection conn = Db.GetConnection();
+            conn.Open();
+
+            string sql = @"SELECT oi.quanity, i.article, i.name AS item_name, i.price
+                           FROM order_item oi
+                           INNER JOIN items i ON oi.items_id = i.id_item
+                           WHERE oi.orders_id = @order_id";
+
+            MySqlCommand cmd = new MySqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@order_id", orderId);
+
+            MySqlDataReader reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                int quantity = 0;
+                if (!reader.IsDBNull(reader.GetOrdinal("quanity")))
+                    quantity = reader.GetInt32("quanity");
+
+                string article = reader.GetString("article");
+                string name = reader.GetString("item_name");
+                decimal price = reader.GetDecimal("price");
+
+                items.Add(new OrderItemModel
+                {
+                    Article = article,
+                    Name = name,
+                    Quantity = quantity,
+                    PriceFormatted = price.ToString("F2") + " руб."
+                });
+            }
+
+            reader.Close();
+            OrderItemsGrid.ItemsSource = items;
+        }
+
+        private void OrdersGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (OrdersGrid.SelectedItem is OrderItemModel selectedOrder)
+            {
+                _selectedOrderId = selectedOrder.Id;
+                LoadOrderItems(selectedOrder.Id);
+            }
+        }
+
+        private void BtnBack_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+    }
+}
+
+```
+
+edit.xaml
+
+
+```cs
+<Window x:Class="project.Edit"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Товар" Height="650" Width="750"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="20">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- Photo Section -->
+                <TextBlock Text="Фото товара:" FontWeight="Bold" Margin="0,0,0,5"/>
+                <Border BorderBrush="#CCCCCC" BorderThickness="1" Height="160" Background="#F5F5F5" 
+                        CornerRadius="4" Margin="0,0,0,15" ClipToBounds="True">
+                    <Image x:Name="PhotoPreview" Stretch="UniformToFill"/>
+                </Border>
+                <Button x:Name="BtnLoadPhoto" Content="Загрузить изображение" Width="180" Height="32" Margin="0,0,0,15"/>
+
+                <!-- Article -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Артикул:" Width="120" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtArticle" Height="32"/>
+                </DockPanel>
+
+                <!-- Name -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Наименование:" Width="120" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtName" Height="32"/>
+                </DockPanel>
+
+                <!-- Category -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Категория:" Width="120" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CboCategory" Height="32"/>
+                </DockPanel>
+
+                <!-- Manufacturer -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Производитель:" Width="120" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CboManufacturs" Height="32"/>
+                </DockPanel>
+
+                <!-- Supplier -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Поставщик:" Width="120" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="CboSuplier" Height="32"/>
+                </DockPanel>
+
+                <!-- Price -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Цена (руб):" Width="120" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtPrice" Height="32"/>
+                </DockPanel>
+
+                <!-- Discount -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Скидка (%):" Width="120" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtDiscount" Height="32"/>
+                </DockPanel>
+
+                <!-- Unit -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Ед. измерения:" Width="120" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtUnit" Height="32"/>
+                </DockPanel>
+
+                <!-- Amount -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,10">
+                    <TextBlock Text="Количество:" Width="120" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtAmount" Height="32"/>
+                </DockPanel>
+
+                <!-- Description -->
+                <DockPanel LastChildFill="True" Margin="0,0,0,15">
+                    <TextBlock Text="Описание:" Width="120" VerticalAlignment="Top"/>
+                    <TextBox x:Name="TxtDesc" Height="80" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                </DockPanel>
+
+                <!-- Buttons -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+                    <Button x:Name="BtnBack" Content="Назад" Width="90" Height="36" Margin="0,0,8,0"/>
+                    <Button x:Name="BtnDelete" Content="Удалить" Width="100" Height="36" 
+                            Background="#E53935" Foreground="White" BorderThickness="0" Margin="0,0,8,0"/>
+                    <Button x:Name="BtnSave" Content="Сохранить" Width="110" Height="36"
+                            Background="#43A047" Foreground="White" BorderThickness="0"/>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>
+```
+
+
+```cs
+using System;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media.Imaging;
+using MySql.Data.MySqlClient;
+using Microsoft.Win32;
+
+namespace project
+{
+    public partial class Edit : Window
+    {
+        private readonly ProductItem _product;
+        private int? _editingId = null;
+        private string _currentPhotoName = "";
+        private bool _isAdding = false;
+
+        public Edit(ProductItem product)
+        {
+            InitializeComponent();
+
+            if (product == null)
+            {
+                _isAdding = true;
+                Title = "Добавить товар";
+            }
+            else
+            {
+                _editingId = product.id_item;
+                _product = product;
+                Title = "Редактирование: " + product.name;
+            }
+
+            BtnSave.Click += BtnSave_Click;
+            BtnDelete.Click += BtnDelete_Click;
+            BtnBack.Click += BtnBack_Click;
+            BtnLoadPhoto.Click += BtnLoadPhoto_Click;
+
+            LoadReferenceData();
+
+            if (!_isAdding && _editingId.HasValue)
+            {
+                LoadProductData(_editingId.Value);
+            }
+        }
+
+        private void LoadReferenceData()
+        {
+            MySqlConnection conn = Db.GetConnection();
+            conn.Open();
+
+            MySqlCommand cmdCat = new MySqlCommand("SELECT id_category, name FROM category ORDER BY name", conn);
+            MySqlDataReader reader = cmdCat.ExecuteReader();
+            while (reader.Read())
+                CboCategory.Items.Add(new { Id = reader.GetInt32(0), Name = reader.GetString(1) });
+            reader.Close();
+
+            MySqlCommand cmdMan = new MySqlCommand("SELECT id_manufacturs, name FROM manufacturs ORDER BY name", conn);
+            MySqlDataReader readerM = cmdMan.ExecuteReader();
+            while (readerM.Read())
+                CboManufacturs.Items.Add(new { Id = readerM.GetInt32(0), Name = readerM.GetString(1) });
+            readerM.Close();
+
+            MySqlCommand cmdSup = new MySqlCommand("SELECT id_suplier, name FROM suplier ORDER BY name", conn);
+            MySqlDataReader readerS = cmdSup.ExecuteReader();
+            while (readerS.Read())
+                CboSuplier.Items.Add(new { Id = readerS.GetInt32(0), Name = readerS.GetString(1) });
+            readerS.Close();
+        }
+
+        private void LoadProductData(int id)
+        {
+            MySqlConnection conn = Db.GetConnection();
+            conn.Open();
+
+            string sql = @"SELECT i.article, i.name, i.unit_name, i.price, i.discount, i.amount, 
+                                  `i`.`desc`, `i`.`photo`,
+                                  i.suplier_id, i.manufacturs_id, i.category_id
+                           FROM items i WHERE i.id_item = @id";
+
+            MySqlCommand cmd = new MySqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id", id);
+
+            MySqlDataReader reader = cmd.ExecuteReader();
+            if (reader.Read())
+            {
+                TxtArticle.Text = reader.GetString("article");
+                TxtName.Text = reader.GetString("name");
+                TxtUnit.Text = reader.GetString("unit_name");
+                TxtPrice.Text = reader.GetDecimal("price").ToString("F2");
+                TxtDiscount.Text = reader.GetInt32("discount").ToString();
+                TxtAmount.Text = reader.GetInt32("amount").ToString();
+                TxtDesc.Text = reader.IsDBNull(reader.GetOrdinal("desc")) ? "" : reader.GetString("desc");
+
+                _currentPhotoName = reader.GetString("photo");
+
+                int suplierId = reader.GetInt32("suplier_id");
+                int manufactursId = reader.GetInt32("manufacturs_id");
+                int categoryId = reader.GetInt32("category_id");
+
+                foreach (var item in CboSuplier.Items)
+                {
+                    dynamic obj = item;
+                    if (obj.Id == suplierId) { CboSuplier.SelectedItem = item; break; }
+                }
+                foreach (var item in CboManufacturs.Items)
+                {
+                    dynamic obj = item;
+                    if (obj.Id == manufactursId) { CboManufacturs.SelectedItem = item; break; }
+                }
+                foreach (var item in CboCategory.Items)
+                {
+                    dynamic obj = item;
+                    if (obj.Id == categoryId) { CboCategory.SelectedItem = item; break; }
+                }
+
+                ShowPhoto(_currentPhotoName);
+            }
+            reader.Close();
+        }
+
+        private void ShowPhoto(string photoFileName)
+        {
+            BitmapImage bitmap = new BitmapImage();
+
+            if (string.IsNullOrEmpty(photoFileName) || photoFileName == "null" || photoFileName == "\0")
+            {
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(@"import/picture.png", UriKind.Relative);
+                bitmap.EndInit();
+                PhotoPreview.Source = bitmap;
+                return;
+            }
+
+            string fullPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\import", photoFileName);
+            if (!File.Exists(fullPath))
+            {
+                fullPath = Path.Combine(Environment.CurrentDirectory, "import", photoFileName);
+            }
+
+            if (!File.Exists(fullPath))
+            {
+                fullPath = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "import", photoFileName);
+            }
+
+            bitmap.BeginInit();
+            if (File.Exists(fullPath))
+            {
+                bitmap.UriSource = new Uri(fullPath);
+            }
+            else
+            {
+                bitmap.UriSource = new Uri(@"import/picture.png", UriKind.Relative);
+            }
+            bitmap.EndInit();
+            PhotoPreview.Source = bitmap;
+        }
+
+        private void BtnLoadPhoto_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog dlg = new OpenFileDialog
+            {
+                Filter = "Image files|*.jpg;*.jpeg;*.png;*.bmp|All files|*.*",
+                Title = "Выберите изображение"
+            };
+
+            if (dlg.ShowDialog() == true)
+            {
+                _currentPhotoName = Path.GetFileName(dlg.FileName);
+
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string importDir = Path.Combine(baseDir, "..", "..", "import");
+                importDir = Path.GetFullPath(importDir);
+                if (!Directory.Exists(importDir))
+                    importDir = Path.Combine(Environment.CurrentDirectory, "import");
+
+                string destPath = Path.Combine(importDir, _currentPhotoName);
+                File.Copy(dlg.FileName, destPath, true);
+
+                ShowPhoto(_currentPhotoName);
+            }
+        }
+
+        private void BtnSave_Click(object sender, RoutedEventArgs e)
+        {
+            string article = TxtArticle.Text.Trim();
+            string name = TxtName.Text.Trim();
+            string unit_name = TxtUnit.Text.Trim();
+            string priceStr = TxtPrice.Text.Trim();
+            string discountStr = TxtDiscount.Text.Trim();
+            string amountStr = TxtAmount.Text.Trim();
+            string desc = TxtDesc.Text.Trim();
+
+            if (string.IsNullOrEmpty(article) || string.IsNullOrEmpty(name))
+            {
+                MessageBox.Show("Заполните артикул и наименование", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            decimal price;
+            if (!decimal.TryParse(priceStr, out price))
+            {
+                MessageBox.Show("Введите корректную цену", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            int discount = 0;
+            if (!int.TryParse(discountStr, out discount))
+                discount = 0;
+
+            int amount = 0;
+            if (!int.TryParse(amountStr, out amount))
+                amount = 0;
+
+            int suplierId = 1;
+            if (CboSuplier.SelectedItem != null)
+            {
+                dynamic obj = CboSuplier.SelectedItem;
+                suplierId = obj.Id;
+            }
+
+            int manufactursId = 1;
+            if (CboManufacturs.SelectedItem != null)
+            {
+                dynamic obj = CboManufacturs.SelectedItem;
+                manufactursId = obj.Id;
+            }
+
+            int categoryId = 1;
+            if (CboCategory.SelectedItem != null)
+            {
+                dynamic obj = CboCategory.SelectedItem;
+                categoryId = obj.Id;
+            }
+
+            string photoName = string.IsNullOrEmpty(_currentPhotoName) ? "picture.png" : _currentPhotoName;
+
+            MySqlConnection conn = Db.GetConnection();
+            conn.Open();
+
+            try
+            {
+                if (_isAdding)
+                {
+                    string sql = @"INSERT INTO items (article, name, unit_name, price, discount, amount, `desc`, photo, 
+                                         suplier_id, manufacturs_id, category_id)
+                                   VALUES (@article, @name, @unit_name, @price, @discount, @amount, @desc, @photo, 
+                                           @suplier_id, @manufacturs_id, @category_id)";
+
+                    MySqlCommand cmd = new MySqlCommand(sql, conn);
+                    cmd.Parameters.AddWithValue("@article", article);
+                    cmd.Parameters.AddWithValue("@name", name);
+                    cmd.Parameters.AddWithValue("@unit_name", unit_name);
+                    cmd.Parameters.AddWithValue("@price", price);
+                    cmd.Parameters.AddWithValue("@discount", discount);
+                    cmd.Parameters.AddWithValue("@amount", amount);
+                    cmd.Parameters.AddWithValue("@desc", desc);
+                    cmd.Parameters.AddWithValue("@photo", photoName);
+                    cmd.Parameters.AddWithValue("@suplier_id", suplierId);
+                    cmd.Parameters.AddWithValue("@manufacturs_id", manufactursId);
+                    cmd.Parameters.AddWithValue("@category_id", categoryId);
+
+                    cmd.ExecuteNonQuery();
+                }
+                else
+                {
+                    string sql = @"UPDATE items SET article=@article, name=@name, unit_name=@unit_name, price=@price, 
+                                         discount=@discount, amount=@amount, `desc`=@desc, photo=@photo,
+                                         suplier_id=@suplier_id, manufacturs_id=@manufacturs_id, category_id=@category_id
+                                   WHERE id_item=@id";
+
+                    MySqlCommand cmd = new MySqlCommand(sql, conn);
+                    cmd.Parameters.AddWithValue("@article", article);
+                    cmd.Parameters.AddWithValue("@name", name);
+                    cmd.Parameters.AddWithValue("@unit_name", unit_name);
+                    cmd.Parameters.AddWithValue("@price", price);
+                    cmd.Parameters.AddWithValue("@discount", discount);
+                    cmd.Parameters.AddWithValue("@amount", amount);
+                    cmd.Parameters.AddWithValue("@desc", desc);
+                    cmd.Parameters.AddWithValue("@photo", photoName);
+                    cmd.Parameters.AddWithValue("@suplier_id", suplierId);
+                    cmd.Parameters.AddWithValue("@manufacturs_id", manufactursId);
+                    cmd.Parameters.AddWithValue("@category_id", categoryId);
+                    cmd.Parameters.AddWithValue("@id", _editingId.Value);
+
+                    cmd.ExecuteNonQuery();
+                }
+
+                MessageBox.Show("Сохранено успешно!", "Готово", MessageBoxButton.OK, MessageBoxImage.Information);
+                DialogResult = true;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Ошибка сохранения: " + ex.Message, "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnDelete_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_editingId.HasValue)
+            {
+                MessageBox.Show("Нечего удалять. Это новый товар.", "Внимание", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            bool result = MessageBox.Show("Удалить товар '" + TxtName.Text + "'?", "Подтверждение",
+                                          MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+
+            if (!result) return;
+
+            MySqlConnection conn = Db.GetConnection();
+            conn.Open();
+
+            try
+            {
+                string sql = "DELETE FROM items WHERE id_item = @id";
+                MySqlCommand cmd = new MySqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@id", _editingId.Value);
+                cmd.ExecuteNonQuery();
+
+                MessageBox.Show("Товар удалён.", "Готово", MessageBoxButton.OK, MessageBoxImage.Information);
+                DialogResult = true;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Ошибка удаления: " + ex.Message, "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnBack_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+    }
+}
+```
