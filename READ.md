@@ -279,5 +279,360 @@ MainMenu.xaml
 
 
 ```cs
+using System;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Input;
+using System.Windows.Media;
+using MySql.Data.MySqlClient;
+
+namespace project
+{
+    public class DiscountToColorConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            int discount = (int)value;
+            if (discount > 12) return "#F4A460";
+            if (discount > 0) return "#E53935";
+            return "Transparent";
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public partial class MainMenu : Window, INotifyPropertyChanged
+    {
+        public ObservableCollection<ProductItem> Products { get; set; } = new ObservableCollection<ProductItem>();
+        private ProductItem _selectedProduct;
+
+        public string UserNameDisplay => Session.IsGuest ? "Гость" : Session.UserName;
+        public string RoleDisplay => Session.IsGuest ? "" : "(" + Session.RoleName + ")";
+
+        public ProductItem SelectedProduct
+        {
+            get { return _selectedProduct; }
+            set
+            {
+                _selectedProduct = value;
+                OnPropertyChanged(nameof(SelectedProduct));
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected void OnPropertyChanged(string name) { PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name)); }
+
+        public MainMenu()
+        {
+            InitializeComponent();
+            DataContext = this;
+
+            BtnEdit.Click += BtnEdit_Click;
+            BtnAdd.Click += BtnAdd_Click;
+            BtnOrders.Click += BtnOrders_Click;
+            BtnLogout.Click += BtnLogout_Click;
+            ProductsGrid.MouseDoubleClick += ProductsGrid_MouseDoubleClick;
+
+            LoadProducts();
+        }
+
+        private void LoadProducts()
+        {
+            try
+            {
+                Products.Clear();
+                MySqlConnection conn = Db.GetConnection();
+                conn.Open();
+
+                string sql = @"SELECT i.id_item, i.article, i.name, i.unit_name, i.price, i.discount, i.amount, 
+                                      `i`.`desc`, `i`.`photo`,
+                                      s.name AS suplier_name, m.name AS manufacturs_name, c.name AS category_name
+                               FROM items i
+                               LEFT JOIN suplier s ON i.suplier_id = s.id_suplier
+                               LEFT JOIN manufacturs m ON i.manufacturs_id = m.id_manufacturs
+                               LEFT JOIN category c ON i.category_id = c.id_category
+                               ORDER BY i.id_item";
+
+                MySqlCommand cmd = new MySqlCommand(sql, conn);
+                MySqlDataReader reader = cmd.ExecuteReader();
+
+            while (reader.Read())
+            {
+                int id = reader.GetInt32("id_item");
+                string article = reader.GetString("article");
+                string name = reader.GetString("name");
+                string unit_name = reader.GetString("unit_name");
+                decimal price = reader.GetDecimal("price");
+                int discount = 0;
+                if (!reader.IsDBNull(reader.GetOrdinal("discount")))
+                    discount = reader.GetInt32("discount");
+
+                int amount = 0;
+                if (!reader.IsDBNull(reader.GetOrdinal("amount")))
+                    amount = reader.GetInt32("amount");
+                string desc = reader.IsDBNull(reader.GetOrdinal("desc")) ? "" : reader.GetString("desc");
+                string photo = reader.GetString("photo");
+
+                string suplier_name = "Не указан";
+                if (!reader.IsDBNull(reader.GetOrdinal("suplier_name")))
+                    suplier_name = reader.GetString("suplier_name");
+
+                string manufacturs_name = "Не указан";
+                if (!reader.IsDBNull(reader.GetOrdinal("manufacturs_name")))
+                    manufacturs_name = reader.GetString("manufacturs_name");
+
+                string category_name = "Не указан";
+                if (!reader.IsDBNull(reader.GetOrdinal("category_name")))
+                    category_name = reader.GetString("category_name");
+
+                string priceFormatted = price.ToString("F2") + " руб.";
+                string amountText = "В наличии: " + amount + " шт.";
+
+                // Формируем путь к фото
+                string photoPath = "";
+                if (!string.IsNullOrEmpty(photo) && System.IO.File.Exists(System.IO.Path.Combine(@"C:\Users\Ferm\Desktop\store\project\import", photo)))
+                {
+                    photoPath = @"pack://application:,,,/import/" + photo;
+                }
+                else
+                {
+                    photoPath = @"pack://application:,,,/import/picture.png";
+                }
+
+                string discountText = discount > 0 ? "-" + discount + "%" : "";
+
+                Products.Add(new ProductItem
+                {
+                    id_item = id,
+                    article = article,
+                    name = name,
+                    unit_name = unit_name,
+                    price = price,
+                    priceFormatted = priceFormatted,
+                    discount = discount,
+                    amount = amount,
+                    amountText = amountText,
+                    desc = desc,
+                    photo = photo,
+                    suplier_name = suplier_name,
+                    manufacturs_name = manufacturs_name,
+                    category_name = category_name,
+                    PhotoPath = photoPath,
+                    DiscountText = discountText,
+                    ManufactursName = manufacturs_name,
+                    SuplierName = suplier_name,
+                    UnitName = unit_name,
+                    ArticleDisplay = "Арт: " + article + " | " + manufacturs_name
+                });
+            }
+
+            reader.Close();
+
+            if (Products.Count > 0)
+                SelectedProduct = Products[0];
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Ошибка загрузки товаров: " + ex.Message, "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void Card_Click(object sender, MouseButtonEventArgs e)
+        {
+            Border border = sender as Border;
+            if (border?.DataContext is ProductItem item)
+            {
+                foreach (var p in Products)
+                    p.IsSelected = false;
+                item.IsSelected = true;
+                SelectedProduct = item;
+            }
+        }
+
+        private void ProductsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (SelectedProduct != null)
+            {
+                OpenEditWindow(SelectedProduct);
+            }
+        }
+
+        private void BtnEdit_Click(object sender, RoutedEventArgs e)
+        {
+            if (SelectedProduct == null)
+            {
+                MessageBox.Show("Выберите товар для редактирования", "Внимание", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            OpenEditWindow(SelectedProduct);
+        }
+
+        private void BtnAdd_Click(object sender, RoutedEventArgs e)
+        {
+            OpenEditWindow(null);
+        }
+
+        private void BtnOrders_Click(object sender, RoutedEventArgs e)
+        {
+            OrdersMenu ordersWindow = new OrdersMenu();
+            ordersWindow.ShowDialog();
+        }
+
+        private void BtnLogout_Click(object sender, RoutedEventArgs e)
+        {
+            Session.UserId = 0;
+            Session.UserName = "";
+            Session.RoleName = "";
+            Session.IsGuest = false;
+
+            MainWindow loginWindow = new MainWindow();
+            loginWindow.Show();
+            this.Close();
+        }
+
+        private void OpenEditWindow(ProductItem product)
+        {
+            if (Session.IsGuest && product != null)
+            {
+                MessageBox.Show("Гость не может редактировать товары", "Доступ запрещен", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            Edit editWindow = new Edit(product);
+            bool? result = editWindow.ShowDialog();
+
+            if (result == true)
+            {
+                LoadProducts();
+                if (product != null && Products.Count > 0)
+                {
+                    ProductItem found = null;
+                    foreach (var p in Products)
+                    {
+                        if (p.id_item == product.id_item)
+                        {
+                            found = p;
+                            break;
+                        }
+                    }
+                    SelectedProduct = found ?? Products[0];
+                }
+                else if (Products.Count > 0)
+                {
+                    SelectedProduct = Products[0];
+                }
+            }
+        }
+
+        public ProductItem FindProductById(int id)
+        {
+            foreach (var p in Products)
+            {
+                if (p.id_item == id) return p;
+            }
+            return null;
+        }
+    }
+
+    public class ProductItem : INotifyPropertyChanged
+    {
+        public int id_item { get; set; }
+        public string article { get; set; } = "";
+        public string name { get; set; } = "";
+        public string unit_name { get; set; } = "";
+        public decimal price { get; set; }
+        public string priceFormatted { get; set; } = "";
+        public int discount { get; set; }
+        public int amount { get; set; }
+        public string amountText { get; set; } = "";
+        public string desc { get; set; } = "";
+        public string photo { get; set; } = "";
+        public string suplier_name { get; set; } = "";
+        public string manufacturs_name { get; set; } = "";
+        public string category_name { get; set; } = "";
+
+        // Дополнительные свойства для отображения
+        public string PhotoPath { get; set; } = @"pack://application:,,,/import/picture.png";
+
+        private string _discountText;
+        public string DiscountText
+        {
+            get => _discountText;
+            set { _discountText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DiscountText))); }
+        }
+
+        public string CategoryAndName => category_name + (string.IsNullOrEmpty(category_name) ? "" : " / ") + name;
+
+        public string DiscountBackgroundColor => discount > 12 ? "#F4A460" : (discount > 0 ? "#E53935" : "Transparent");
+
+        // Свойства с camelCase для корректного биндинга XAML
+        private string _manufactursName;
+        public string ManufactursName
+        {
+            get => _manufactursName;
+            set { _manufactursName = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ManufactursName))); }
+        }
+
+        private string _suplierName;
+        public string SuplierName
+        {
+            get => _suplierName;
+            set { _suplierName = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SuplierName))); }
+        }
+
+        private string _unitName;
+        public string UnitName
+        {
+            get => _unitName;
+            set { _unitName = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(UnitName))); }
+        }
+
+        private string _articleDisplay;
+        public string ArticleDisplay
+        {
+            get => _articleDisplay;
+            set { _articleDisplay = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArticleDisplay))); }
+        }
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected != value)
+                {
+                    _isSelected = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+    }
+
+    public class OrderItemModel
+    {
+        public int Id { get; set; }
+        public string Article { get; set; } = "";
+        public string OrderDate { get; set; } = "";
+        public string DeliveryDate { get; set; } = "";
+        public string PickupPoint { get; set; } = "";
+        public string CreatedBy { get; set; } = "";
+        public int Code { get; set; }
+        public string Status { get; set; } = "";
+
+        public string ItemsList { get; set; } = "";
+        public string Name { get; set; } = "";
+        public int Quantity { get; set; }
+        public string PriceFormatted { get; set; } = "";
+    }
+}
 
 ```
