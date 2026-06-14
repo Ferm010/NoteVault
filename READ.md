@@ -37,7 +37,7 @@ namespace project
 }
 ```
 
-
+MainWindow.xaml
 ```XAML
 <Window x:Class="project.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
