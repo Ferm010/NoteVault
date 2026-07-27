@@ -6,4 +6,5 @@ https://hh.ru/vacancies/razrabotchik-mobilnyh-prilozhenij
 - [ ] Уметь работать с системой контроля версий Git
 - [ ] Фреймворк дизайна Jetpack compose
 - [ ] Знать как работать с сетью (Retrofit2, OkHttp3)
-- [ ] J
+- [ ] Знать как работать с базыми данных (Firebase, room)
+- [ ] Умение работать с многопоточностью (Coroutines)
